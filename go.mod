@@ -1,4 +1,4 @@
-module github.com/shurdanil/go-libvirt
+module github.com/shurdanil/go-libvirt-shur
 
 go 1.22.0
 
