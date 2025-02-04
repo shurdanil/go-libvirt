@@ -308,6 +308,7 @@ type remoteAuthSASLStartStepRet struct {
 }
 
 func (l *Libvirt) authenticateSASL(auth sasl.AuthInfo) error {
+	fmt.Println(311)
 	res, err := l.request(constants.ProcAuthSASLInit, constants.Program, nil)
 	if err != nil {
 		return nil
@@ -316,6 +317,7 @@ func (l *Libvirt) authenticateSASL(auth sasl.AuthInfo) error {
 		return err
 	}
 
+	fmt.Println(320)
 	mechlist := ""
 	l.decode(res.Payload, &mechlist)
 	saslClient := sasl.NewClient("libvirt", "localhost", auth)
@@ -458,46 +460,12 @@ func (l *Libvirt) connectWithAuth(auth AuthInfo) error {
 	if err != nil {
 		return err
 	}
-	// libvirt requires that we call auth-list prior to connecting,
-	// event when no authentication is used.
-	res, err := l.request(constants.ProcAuthList, constants.Program, buf)
+	err = l.authenticateSASL(auth.(sasl.AuthInfo))
 	if err != nil {
 		return err
 	}
 
-	if err = getQEMUError(res); err != nil {
-		return err
-	}
-
-	var remoteAuthList remoteAuthTypesRet
-	err = l.decode(res.Payload, &remoteAuthList)
-	if err != nil {
-		return err
-	}
-	if len(remoteAuthList.Types) > 0 {
-	loop:
-		for _, expected := range remoteAuthList.Types {
-			switch expected {
-			case constants.RemoteAuthTypeSASL:
-				if auth != nil && auth.WantedAuthType() == expected {
-					err = l.authenticateSASL(auth.(sasl.AuthInfo))
-					if err != nil {
-						return err
-					}
-					break loop
-				}
-			case constants.RemoteAuthTypePolKit:
-				// TODO: Implement PolKit support
-			default:
-				return errors.New("unknown auth type")
-			}
-		}
-	}
-	buf, err = encode(&payload)
-	if err != nil {
-		return err
-	}
-	res, err = l.request(constants.ProcConnectOpen, constants.Program, buf)
+	res, err := l.request(constants.ProcConnectOpen, constants.Program, buf)
 	if err != nil {
 		return err
 	}
