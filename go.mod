@@ -1,4 +1,4 @@
-module github.com/digitalocean/go-libvirt
+module github.com/shurdanil/go-libvirt
 
 go 1.22.0
 

@@ -5,8 +5,8 @@ The `go-libvirt` project makes use of the [GitHub Flow](https://guides.github.co
 for contributions.
 
 If you'd like to contribute to the project, please
-[open an issue](https://github.com/digitalocean/go-libvirt/issues/new) or find an
-[existing issue](https://github.com/digitalocean/go-libvirt/issues) that you'd like
+[open an issue](https://github.com/shurdanil/go-libvirt/issues/new) or find an
+[existing issue](https://github.com/shurdanil/go-libvirt/issues) that you'd like
 to take on.  This ensures that efforts are not duplicated, and that a new feature
 aligns with the focus of the rest of the repository.
 
@@ -20,7 +20,7 @@ code meets the following criteria:
 
 In addition, if this is your first time contributing to the `go-libvirt` project,
 add your name and email address to the
-[AUTHORS](https://github.com/digitalocean/go-libvirt/blob/master/AUTHORS) file
+[AUTHORS](https://github.com/shurdanil/go-libvirt/blob/master/AUTHORS) file
 under the "Contributors" section using the format:
 `First Last <email@example.com>`.
 

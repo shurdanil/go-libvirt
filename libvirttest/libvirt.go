@@ -25,7 +25,7 @@ import (
 	"os"
 	"sync/atomic"
 
-	"github.com/digitalocean/go-libvirt/internal/constants"
+	"github.com/shurdanil/go-libvirt/internal/constants"
 )
 
 var testDomainResponse = []byte{
@@ -584,10 +584,10 @@ var testGetAllDomainStatsReply = []byte{
 
 // MockLibvirt provides a mock libvirt server for testing.
 type MockLibvirt struct {
-	client net.Conn
-	Test   net.Conn
-	Fail   bool
-	serial uint32
+	client       net.Conn
+	Test         net.Conn
+	Fail         bool
+	serial       uint32
 	disconnected chan struct{}
 }
 

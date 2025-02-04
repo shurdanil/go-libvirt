@@ -11,7 +11,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/digitalocean/go-libvirt/internal/constants"
+	"github.com/shurdanil/go-libvirt/internal/constants"
 )
 
 const disconnectTimeout = 5 * time.Second

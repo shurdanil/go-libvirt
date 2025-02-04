@@ -30,7 +30,7 @@
 //		"net/url"
 //		"time"
 //
-//		"github.com/digitalocean/go-libvirt"
+//		"github.com/shurdanil/go-libvirt"
 //	)
 //
 //	func main() {

@@ -1,7 +1,7 @@
 libvirt
-[![GoDoc](http://godoc.org/github.com/digitalocean/go-libvirt?status.svg)](http://godoc.org/github.com/digitalocean/go-libvirt)
-[![Build Status](https://github.com/digitalocean/go-libvirt/actions/workflows/main.yml/badge.svg)](https://github.com/digitalocean/go-libvirt/actions/)
-[![Report Card](https://goreportcard.com/badge/github.com/digitalocean/go-libvirt)](https://goreportcard.com/report/github.com/digitalocean/go-libvirt)
+[![GoDoc](http://godoc.org/github.com/shurdanil/go-libvirt?status.svg)](http://godoc.org/github.com/shurdanil/go-libvirt)
+[![Build Status](https://github.com/shurdanil/go-libvirt/actions/workflows/main.yml/badge.svg)](https://github.com/shurdanil/go-libvirt/actions/)
+[![Report Card](https://goreportcard.com/badge/github.com/shurdanil/go-libvirt)](https://goreportcard.com/report/github.com/shurdanil/go-libvirt)
 ====
 
 Package `go-libvirt` provides a pure Go interface for interacting with libvirt.
@@ -17,7 +17,7 @@ The code generators should be run whenever you want to build go-libvirt for a
 new version of libvirt. See the next section for directions on re-generating
 go-libvirt.
 
-[Pull requests are welcome](https://github.com/digitalocean/go-libvirt/blob/master/CONTRIBUTING.md)!
+[Pull requests are welcome](https://github.com/shurdanil/go-libvirt/blob/master/CONTRIBUTING.md)!
 
 Feel free to join us in [`#go-libvirt` on libera chat](https://web.libera.chat/)
 if you'd like to discuss the project.
@@ -78,7 +78,7 @@ though we're able to generate a wrapper function with a distinct flag type,
 making it easier for Go tooling to suggest possible flag values while you're
 working. Checking the documentation for this function:
 
-`godoc github.com/digitalocean/go-libvirt DomainShutdownFlags`
+`godoc github.com/shurdanil/go-libvirt DomainShutdownFlags`
 
 returns this:
 
@@ -87,7 +87,7 @@ returns this:
 If you want to see the possible flag values, `godoc` can help again:
 
 ```
-$ godoc github.com/digitalocean/go-libvirt DomainShutdownFlagValues
+$ godoc github.com/shurdanil/go-libvirt DomainShutdownFlagValues
 
 type DomainShutdownFlagValues int32
     DomainShutdownFlagValues as declared in libvirt/libvirt-domain.h:1121
@@ -131,7 +131,7 @@ import (
 	"log"
 	"net/url"
 
-	"github.com/digitalocean/go-libvirt"
+	"github.com/shurdanil/go-libvirt"
 )
 
 func main() {
@@ -189,8 +189,8 @@ import (
         "io/ioutil"
         "log"
 
-        "github.com/digitalocean/go-libvirt"
-        "github.com/digitalocean/go-libvirt/socket/dialers"
+        "github.com/shurdanil/go-libvirt"
+        "github.com/shurdanil/go-libvirt/socket/dialers"
 )
 
 func main() {

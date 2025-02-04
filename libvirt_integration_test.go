@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build integration
 // +build integration
 
 package libvirt
@@ -25,8 +26,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/digitalocean/go-libvirt/socket"
-	"github.com/digitalocean/go-libvirt/socket/dialers"
+	"github.com/shurdanil/go-libvirt/socket"
+	"github.com/shurdanil/go-libvirt/socket/dialers"
 )
 
 // In order for this test to work, libvirtd must be running and listening for
@@ -440,7 +441,7 @@ func TestVolumeUploadDownloadIntegration(t *testing.T) {
 }
 
 // verify we're able to concurrently communicate with libvirtd.
-// see: https://github.com/digitalocean/go-libvirt/pull/52
+// see: https://github.com/shurdanil/go-libvirt/pull/52
 func Test_concurrentWrite(t *testing.T) {
 	l := NewWithDialer(testDialer(t))
 
