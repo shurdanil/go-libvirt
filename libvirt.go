@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -32,6 +33,7 @@ import (
 	"github.com/digitalocean/go-libvirt/internal/constants"
 	"github.com/digitalocean/go-libvirt/internal/event"
 	xdr "github.com/digitalocean/go-libvirt/internal/go-xdr/xdr2"
+	"github.com/digitalocean/go-libvirt/sasl"
 	"github.com/digitalocean/go-libvirt/socket"
 	"github.com/digitalocean/go-libvirt/socket/dialers"
 )
@@ -39,6 +41,36 @@ import (
 // ErrEventsNotSupported is returned by Events() if event streams
 // are unsupported by either QEMU or libvirt.
 var ErrEventsNotSupported = errors.New("event monitor is not supported")
+
+// AuthInfo is used as authentication provider
+type AuthInfo interface {
+	WantedAuthType() constants.RemoteAuthType
+}
+type authInfoProvider struct {
+	wantedAuthType constants.RemoteAuthType
+}
+
+func (auth authInfoProvider) WantedAuthType() constants.RemoteAuthType {
+	return auth.wantedAuthType
+}
+
+type saslAuthInfo struct {
+	authInfoProvider
+	saslAuthInfo sasl.AuthInfo
+}
+
+func (auth saslAuthInfo) Callback(items []sasl.CallbackRequestItem) error {
+	return auth.saslAuthInfo.Callback(items)
+}
+
+// SASLUserPassAuth creates an AuthInfo object for SASL with embedded
+// username and password provider
+func SASLUserPassAuth(username, password string) AuthInfo {
+	return &saslAuthInfo{
+		authInfoProvider{constants.RemoteAuthTypeSASL},
+		sasl.MakeUserPassAuthInfo(username, password),
+	}
+}
 
 // ConnectURI defines a type for driver URIs for libvirt
 // the defined constants are *not* exhaustive as there are also options
@@ -52,7 +84,7 @@ const (
 	QEMUSession ConnectURI = "qemu:///session"
 	// XenSystem connects to a Xen system mode daemon
 	XenSystem ConnectURI = "xen:///system"
-	//TestDefault connect to default mock driver
+	// TestDefault connect to default mock driver
 	TestDefault ConnectURI = "test:///default"
 
 	// disconnectedTimeout is how long to wait for disconnect cleanup to
@@ -250,6 +282,98 @@ func (l *Libvirt) authenticate() error {
 	return nil
 }
 
+type remoteAuthTypesRet struct {
+	Types []constants.RemoteAuthType
+}
+
+func (l *Libvirt) decode(payload []byte, v interface{}) error {
+	dec := xdr.NewDecoder(bytes.NewReader(payload))
+	_, err := dec.Decode(v)
+	return err
+}
+
+type remoteAuthSASLStartArgs struct {
+	Mech string
+	Nil  int32
+	Data []rune
+}
+type remoteAuthSASLStepArgs struct {
+	Nil  int32
+	Data []rune
+}
+type remoteAuthSASLStartStepRet struct {
+	Complete int32
+	Nil      int32
+	Data     []rune
+}
+
+func (l *Libvirt) authenticateSASL(auth sasl.AuthInfo) error {
+	res, err := l.request(constants.ProcAuthSASLInit, constants.Program, nil)
+	if err != nil {
+		return nil
+	}
+	if err = getQEMUError(res); err != nil {
+		return err
+	}
+
+	mechlist := ""
+	l.decode(res.Payload, &mechlist)
+	saslClient := sasl.NewClient("libvirt", "localhost", auth)
+	startArgs := remoteAuthSASLStartArgs{}
+	startArgs.Nil = 1
+	startArgs.Data = []rune{}
+	startArgs.Mech, err = saslClient.FindMech(strings.Split(mechlist, ","))
+	if err != nil {
+		return err
+	}
+	buf, err := encode(startArgs)
+	if err != nil {
+		return err
+	}
+	res, err = l.request(constants.ProcAuthSASLStart, constants.Program, buf)
+	if err != nil {
+		return err
+	}
+	if err = getQEMUError(res); err != nil {
+		return err
+	}
+
+	startRet := remoteAuthSASLStartStepRet{}
+	err = l.decode(res.Payload, &startRet)
+	if err != nil {
+		return err
+	}
+	if startRet.Nil == 1 {
+		return fmt.Errorf("libvirt SASL auth: initial challenge not received")
+	}
+	saslClient.ApplyChallenge(string(startRet.Data))
+	for {
+		stepArgs := remoteAuthSASLStepArgs{
+			Nil:  0,
+			Data: []rune(saslClient.MakeResponse()),
+		}
+		buf, err = encode(stepArgs)
+		res, err = l.request(constants.ProcAuthSASLStep, constants.Program, buf)
+		if err != nil {
+			return err
+		}
+		if err = getQEMUError(res); err != nil {
+			return err
+		}
+		stepRet := remoteAuthSASLStartStepRet{}
+		err = l.decode(res.Payload, &stepRet)
+		if err != nil {
+			return err
+		}
+		if stepRet.Nil == 0 {
+			saslClient.ApplyChallenge(string(stepRet.Data))
+		}
+		if stepRet.Complete == 1 {
+			return nil
+		}
+	}
+}
+
 func (l *Libvirt) initLibvirtComms(uri ConnectURI) error {
 	payload := struct {
 		Padding [3]byte
@@ -313,6 +437,76 @@ func (l *Libvirt) ConnectToURI(uri ConnectURI) error {
 // to monitor for a lost connection.
 func (l *Libvirt) Connect() error {
 	return l.ConnectToURI(QEMUSystem)
+}
+
+func (l *Libvirt) ConnectWithAuth(auth AuthInfo) error {
+	return l.connectWithAuth(auth)
+}
+
+func (l *Libvirt) connectWithAuth(auth AuthInfo) error {
+	payload := struct {
+		Padding [3]byte
+		Name    ConnectURI
+		Flags   uint32
+	}{
+		Padding: [3]byte{0x1, 0x0, 0x0},
+		Name:    QEMUSystem,
+		Flags:   0,
+	}
+
+	buf, err := encode(&payload)
+	if err != nil {
+		return err
+	}
+	// libvirt requires that we call auth-list prior to connecting,
+	// event when no authentication is used.
+	res, err := l.request(constants.ProcAuthList, constants.Program, buf)
+	if err != nil {
+		return err
+	}
+
+	if err = getQEMUError(res); err != nil {
+		return err
+	}
+
+	var remoteAuthList remoteAuthTypesRet
+	err = l.decode(res.Payload, &remoteAuthList)
+	if err != nil {
+		return err
+	}
+	if len(remoteAuthList.Types) > 0 {
+	loop:
+		for _, expected := range remoteAuthList.Types {
+			switch expected {
+			case constants.RemoteAuthTypeSASL:
+				if auth != nil && auth.WantedAuthType() == expected {
+					err = l.authenticateSASL(auth.(sasl.AuthInfo))
+					if err != nil {
+						return err
+					}
+					break loop
+				}
+			case constants.RemoteAuthTypePolKit:
+				// TODO: Implement PolKit support
+			default:
+				return errors.New("unknown auth type")
+			}
+		}
+	}
+	buf, err = encode(&payload)
+	if err != nil {
+		return err
+	}
+	res, err = l.request(constants.ProcConnectOpen, constants.Program, buf)
+	if err != nil {
+		return err
+	}
+
+	if err = getQEMUError(res); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Disconnect shuts down communication with the libvirt server and closes the
@@ -527,6 +721,7 @@ func (l *Libvirt) LifecycleEvents(ctx context.Context) (<-chan DomainEventLifecy
 
 // Run executes the given QAPI command against a domain's QEMU instance.
 // For a list of available QAPI commands, see:
+//
 //	http://git.qemu.org/?p=qemu.git;a=blob;f=qapi-schema.json;hb=HEAD
 func (l *Libvirt) Run(dom string, cmd []byte) ([]byte, error) {
 	d, err := l.lookup(dom)
@@ -728,7 +923,8 @@ type BlockLimit struct {
 // 'blkdeviotune' command on a VM in virsh.
 //
 // Example usage:
-//  SetBlockIOTune("vm-name", "vda", BlockLimit{libvirt.QEMUBlockIOWriteBytesSec, 1000000})
+//
+//	SetBlockIOTune("vm-name", "vda", BlockLimit{libvirt.QEMUBlockIOWriteBytesSec, 1000000})
 //
 // Deprecated: use DomainSetBlockIOTune instead.
 func (l *Libvirt) SetBlockIOTune(dom string, disk string, limits ...BlockLimit) error {

@@ -1,7 +1,8 @@
 module github.com/digitalocean/go-libvirt
 
-go 1.21
-toolchain go1.22.5
+go 1.22.0
+
+toolchain go1.23.2
 
 require (
 	github.com/stretchr/testify v1.10.0
