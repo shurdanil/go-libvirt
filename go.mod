@@ -1,8 +1,6 @@
-module github.com/shurdanil/go-libvirt-shur
+module github.com/shurdanil/go-libvirt
 
 go 1.22.0
-
-toolchain go1.23.2
 
 require (
 	github.com/stretchr/testify v1.10.0
