@@ -312,7 +312,7 @@ func (l *Libvirt) requestStream(proc uint32, program uint32, payload []byte,
 		}
 	}
 
-	fmt.Println(315)
+	fmt.Println(315, "req")
 	switch in {
 	case nil:
 		return resp, nil

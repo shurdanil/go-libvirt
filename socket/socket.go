@@ -313,14 +313,16 @@ func (s *Socket) SendPacket(
 		},
 	}
 
-	fmt.Println(315)
+	fmt.Println(315, "send")
 	size := int(unsafe.Sizeof(p.Len)) + int(unsafe.Sizeof(p.Header))
 	if payload != nil {
 		size += len(payload)
 	}
 	p.Len = uint32(size)
 
+	fmt.Println(323)
 	if s.isDisconnected() {
+		fmt.Println(325, "disconnected")
 		// this mirrors what a lot of net code return on use of a no
 		// longer valid connection
 		return syscall.EINVAL
