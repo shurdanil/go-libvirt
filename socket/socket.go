@@ -124,9 +124,6 @@ func New(dialer Dialer, router Router) *Socket {
 		mu:           &sync.Mutex{},
 	}
 
-	// we start with a closed channel since that indicates no connection
-	close(s.disconnected)
-
 	return s
 }
 
