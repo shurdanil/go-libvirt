@@ -265,10 +265,13 @@ func (l *Libvirt) request(proc uint32, program uint32, payload []byte) (response
 // are optional, and should be nil when RPC endpoints don't return a stream.
 func (l *Libvirt) requestStream(proc uint32, program uint32, payload []byte,
 	out io.Reader, in io.Writer) (response, error) {
+	fmt.Println(268)
 	serial := l.serial()
 	c := make(chan response)
 
+	fmt.Println(272)
 	l.register(serial, c)
+	fmt.Println(274)
 	defer func() {
 		l.cmux.Lock()
 		defer l.cmux.Unlock()
@@ -276,17 +279,19 @@ func (l *Libvirt) requestStream(proc uint32, program uint32, payload []byte,
 		l.deregister(serial)
 	}()
 
+	fmt.Println(282)
 	err := l.socket.SendPacket(serial, proc, program, payload, socket.Call,
 		socket.StatusOK)
 	if err != nil {
 		return response{}, err
 	}
 
+	fmt.Println(289)
 	resp, err := l.getResponse(c)
 	if err != nil {
 		return resp, err
 	}
-
+	fmt.Println(294)
 	if out != nil {
 		abort := make(chan bool)
 		outErr := make(chan error)
@@ -307,6 +312,7 @@ func (l *Libvirt) requestStream(proc uint32, program uint32, payload []byte,
 		}
 	}
 
+	fmt.Println(315)
 	switch in {
 	case nil:
 		return resp, nil
