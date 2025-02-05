@@ -151,6 +151,18 @@ func (s *Socket) Connect() error {
 	return nil
 }
 
+func (s *Socket) ConnectFake(conn net.Conn) error {
+
+	s.conn = conn
+	s.reader = bufio.NewReader(conn)
+	s.writer = bufio.NewWriter(conn)
+	s.disconnected = make(chan struct{})
+
+	go s.listenAndRoute()
+
+	return nil
+}
+
 // Disconnect closes the Socket connection to libvirt and waits for the reader
 // gorouting to shut down.
 func (s *Socket) Disconnect() error {

@@ -1015,6 +1015,23 @@ func NewWithDialer(dialer socket.Dialer) *Libvirt {
 	return l
 }
 
+func NewWithConn(dialer socket.Dialer, conn net.Conn) *Libvirt {
+	l := &Libvirt{
+		s:            0,
+		disconnected: make(chan struct{}),
+		callbacks:    make(map[int32]chan response),
+		events:       make(map[int32]*event.Stream),
+	}
+
+	l.socket = socket.New(dialer, l)
+
+	err := l.socket.ConnectFake(conn)
+	if err != nil {
+		fmt.Println(1030, err)
+	}
+	return l
+}
+
 // New configures a new Libvirt RPC connection.
 // This function only remains to retain backwards compatability.
 // When Libvirt's Connect function is called, the Dial will simply return the
