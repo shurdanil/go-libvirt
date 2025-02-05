@@ -1012,9 +1012,6 @@ func NewWithDialer(dialer socket.Dialer) *Libvirt {
 
 	l.socket = socket.New(dialer, l)
 
-	// we start with a closed channel since that indicates no connection
-	close(l.disconnected)
-
 	return l
 }
 
