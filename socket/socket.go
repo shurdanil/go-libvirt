@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -312,6 +313,7 @@ func (s *Socket) SendPacket(
 		},
 	}
 
+	fmt.Println(315)
 	size := int(unsafe.Sizeof(p.Len)) + int(unsafe.Sizeof(p.Header))
 	if payload != nil {
 		size += len(payload)
@@ -324,14 +326,17 @@ func (s *Socket) SendPacket(
 		return syscall.EINVAL
 	}
 
+	fmt.Println(329)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	fmt.Println(333)
 	err := binary.Write(s.writer, binary.BigEndian, p)
 	if err != nil {
 		return err
 	}
 
+	fmt.Println(339)
 	// write payload
 	if payload != nil {
 		err = binary.Write(s.writer, binary.BigEndian, payload)
@@ -339,8 +344,10 @@ func (s *Socket) SendPacket(
 			return err
 		}
 	}
-
-	return s.writer.Flush()
+	fmt.Println(347)
+	err = s.writer.Flush()
+	fmt.Println(349)
+	return err
 }
 
 // SendStream sends a stream of packets to libvirt on the socket connection.
