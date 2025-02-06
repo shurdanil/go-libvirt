@@ -268,12 +268,9 @@ func (l *Libvirt) authenticateSASL(user, pass, mech string) error {
 		return fmt.Errorf("invalid mechanism '%s'", mech)
 	}
 
-	_, startNil, _, err := l.AuthSaslStart(mech, 0, []int8{})
+	_, _, _, err = l.AuthSaslStart(mech, 0, []int8{})
 	if err != nil {
 		return err
-	}
-	if startNil == 1 {
-		return fmt.Errorf("libvirt SASL auth: initial challenge not received")
 	}
 
 	snonce, salt, iterations, err := l.fistStep(user)
@@ -293,12 +290,9 @@ func (l *Libvirt) fistStep(user string) ([]byte, []byte, int, error) {
 		firstMsgInt = append(firstMsgInt, int8(b))
 	}
 
-	_, respNil, resp, err := l.AuthSaslStep(0, firstMsgInt)
+	_, _, resp, err := l.AuthSaslStep(0, firstMsgInt)
 	if err != nil {
 		return nil, nil, 0, err
-	}
-	if respNil == 1 {
-		return nil, nil, 0, fmt.Errorf("libvirt SASL auth, first step: response not nil")
 	}
 
 	var res []byte
@@ -336,13 +330,9 @@ func (l *Libvirt) secondStep(user, pass string, snonce, salt []byte, iterations 
 		passInt = append(passInt, int8(b))
 	}
 
-	_, rNil, _, err := l.AuthSaslStep(0, passInt)
+	_, _, _, err := l.AuthSaslStep(0, passInt)
 	if err != nil {
 		return err
-
-	}
-	if rNil == 1 {
-		return fmt.Errorf("libvirt SASL auth, second step: response not nil")
 	}
 	return nil
 }
