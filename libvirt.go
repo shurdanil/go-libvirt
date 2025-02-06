@@ -263,7 +263,6 @@ func (l *Libvirt) authenticateSASL(user, pass, mech string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(266, mechList)
 
 	if !strings.Contains(strings.ToLower(mechList), strings.ToLower(mech)) {
 		return fmt.Errorf("invalid mechanism '%s'", mech)
@@ -274,12 +273,10 @@ func (l *Libvirt) authenticateSASL(user, pass, mech string) error {
 		return err
 	}
 
-	fmt.Println(277, "started")
 	snonce, salt, iterations, err := l.fistStep(user)
 	if err != nil {
 		return err
 	}
-	fmt.Println(281, string(snonce), string(salt), iterations)
 
 	return l.secondStep(user, pass, snonce, salt, iterations)
 }
@@ -305,7 +302,6 @@ func (l *Libvirt) fistStep(user string) ([]byte, []byte, int, error) {
 		res = append(res, byte(resInt))
 	}
 
-	fmt.Println(308, string(res))
 	re := regexp.MustCompile(`r=nonce(.+),s=(.+),i=(\d+)`)
 	match := re.FindStringSubmatch(string(res))
 	if len(match) < 4 {
@@ -339,17 +335,10 @@ func (l *Libvirt) secondStep(user, pass string, snonce, salt []byte, iterations 
 		secondMsgInt = append(secondMsgInt, int8(b))
 	}
 
-	_, _, i4, err := l.AuthSaslStep(0, secondMsgInt)
+	_, _, _, err := l.AuthSaslStep(0, secondMsgInt)
 	if err != nil {
 		return errors.Join(secondStepErr, err)
 	}
-
-	var res []byte
-	for _, resInt := range i4 {
-		res = append(res, byte(resInt))
-	}
-	resstr := string(res)
-	fmt.Println("second server msg", resstr)
 
 	return nil
 }
@@ -467,12 +456,8 @@ func (l *Libvirt) connectWithAuth(user, pass, mech string) error {
 		return err
 	}
 
-	res, err := l.request(constants.ProcConnectOpen, constants.Program, buf)
+	_, err = l.request(constants.ProcConnectOpen, constants.Program, buf)
 	if err != nil {
-		return err
-	}
-
-	if err = getQEMUError(res); err != nil {
 		return err
 	}
 
