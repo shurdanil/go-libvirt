@@ -21,10 +21,13 @@ package libvirt
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -33,44 +36,10 @@ import (
 	"github.com/shurdanil/go-libvirt/internal/constants"
 	"github.com/shurdanil/go-libvirt/internal/event"
 	xdr "github.com/shurdanil/go-libvirt/internal/go-xdr/xdr2"
-	"github.com/shurdanil/go-libvirt/sasl"
+	"github.com/shurdanil/go-libvirt/scram"
 	"github.com/shurdanil/go-libvirt/socket"
 	"github.com/shurdanil/go-libvirt/socket/dialers"
 )
-
-// ErrEventsNotSupported is returned by Events() if event streams
-// are unsupported by either QEMU or libvirt.
-var ErrEventsNotSupported = errors.New("event monitor is not supported")
-
-// AuthInfo is used as authentication provider
-type AuthInfo interface {
-	WantedAuthType() constants.RemoteAuthType
-}
-type authInfoProvider struct {
-	wantedAuthType constants.RemoteAuthType
-}
-
-func (auth authInfoProvider) WantedAuthType() constants.RemoteAuthType {
-	return auth.wantedAuthType
-}
-
-type saslAuthInfo struct {
-	authInfoProvider
-	saslAuthInfo sasl.AuthInfo
-}
-
-func (auth saslAuthInfo) Callback(items []sasl.CallbackRequestItem) error {
-	return auth.saslAuthInfo.Callback(items)
-}
-
-// SASLUserPassAuth creates an AuthInfo object for SASL with embedded
-// username and password provider
-func SASLUserPassAuth(username, password string) AuthInfo {
-	return &saslAuthInfo{
-		authInfoProvider{constants.RemoteAuthTypeSASL},
-		sasl.MakeUserPassAuthInfo(username, password),
-	}
-}
 
 // ConnectURI defines a type for driver URIs for libvirt
 // the defined constants are *not* exhaustive as there are also options
@@ -282,98 +251,100 @@ func (l *Libvirt) authenticate() error {
 	return nil
 }
 
-type remoteAuthTypesRet struct {
-	Types []constants.RemoteAuthType
-}
-
 func (l *Libvirt) decode(payload []byte, v interface{}) error {
 	dec := xdr.NewDecoder(bytes.NewReader(payload))
 	_, err := dec.Decode(v)
 	return err
 }
 
-type remoteAuthSASLStartArgs struct {
-	Mech string
-	Nil  int32
-	Data []rune
-}
-type remoteAuthSASLStepArgs struct {
-	Nil  int32
-	Data []rune
-}
-type remoteAuthSASLStartStepRet struct {
-	Complete int32
-	Nil      int32
-	Data     []rune
-}
+func (l *Libvirt) authenticateSASL(user, pass, mech string) error {
 
-func (l *Libvirt) authenticateSASL(auth sasl.AuthInfo) error {
-	fmt.Println(311)
-	res, err := l.request(constants.ProcAuthSASLInit, constants.Program, nil)
+	mechList, err := l.AuthSaslInit()
 	if err != nil {
-		return nil
-	}
-	if err = getQEMUError(res); err != nil {
 		return err
 	}
 
-	fmt.Println(320)
-	mechlist := ""
-	l.decode(res.Payload, &mechlist)
-	saslClient := sasl.NewClient("libvirt", "localhost", auth)
-	startArgs := remoteAuthSASLStartArgs{}
-	startArgs.Nil = 1
-	startArgs.Data = []rune{}
-	startArgs.Mech, err = saslClient.FindMech(strings.Split(mechlist, ","))
-	if err != nil {
-		return err
-	}
-	buf, err := encode(startArgs)
-	if err != nil {
-		return err
-	}
-	res, err = l.request(constants.ProcAuthSASLStart, constants.Program, buf)
-	if err != nil {
-		return err
-	}
-	if err = getQEMUError(res); err != nil {
-		return err
+	if !strings.Contains(strings.ToLower(mechList), strings.ToLower(mech)) {
+		return fmt.Errorf("invalid mechanism '%s'", mech)
 	}
 
-	startRet := remoteAuthSASLStartStepRet{}
-	err = l.decode(res.Payload, &startRet)
+	_, startNil, _, err := l.AuthSaslStart(mech, 0, []int8{})
 	if err != nil {
 		return err
 	}
-	if startRet.Nil == 1 {
+	if startNil == 1 {
 		return fmt.Errorf("libvirt SASL auth: initial challenge not received")
 	}
-	saslClient.ApplyChallenge(string(startRet.Data))
-	for {
-		stepArgs := remoteAuthSASLStepArgs{
-			Nil:  0,
-			Data: []rune(saslClient.MakeResponse()),
-		}
-		buf, err = encode(stepArgs)
-		res, err = l.request(constants.ProcAuthSASLStep, constants.Program, buf)
-		if err != nil {
-			return err
-		}
-		if err = getQEMUError(res); err != nil {
-			return err
-		}
-		stepRet := remoteAuthSASLStartStepRet{}
-		err = l.decode(res.Payload, &stepRet)
-		if err != nil {
-			return err
-		}
-		if stepRet.Nil == 0 {
-			saslClient.ApplyChallenge(string(stepRet.Data))
-		}
-		if stepRet.Complete == 1 {
-			return nil
-		}
+
+	snonce, salt, iterations, err := l.fistStep(user)
+	if err != nil {
+		return err
 	}
+
+	return l.secondStep(user, pass, snonce, salt, iterations)
+}
+
+func (l *Libvirt) fistStep(user string) ([]byte, []byte, int, error) {
+
+	firstMsg := scram.ClientFirstMessage([]byte(user), []byte("nonce"))
+
+	var firstMsgInt []int8
+	for _, b := range firstMsg {
+		firstMsgInt = append(firstMsgInt, int8(b))
+	}
+
+	_, respNil, resp, err := l.AuthSaslStep(0, firstMsgInt)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	if respNil == 1 {
+		return nil, nil, 0, fmt.Errorf("libvirt SASL auth, first step: response not nil")
+	}
+
+	var res []byte
+	for _, resInt := range resp {
+		res = append(res, byte(resInt))
+	}
+
+	re := regexp.MustCompile(`r=nonce(.+),s=(.+),i=(\d+)`)
+	match := re.FindStringSubmatch(string(res))
+	if len(match) < 4 {
+		return nil, nil, 0, fmt.Errorf("libvirt SASL auth: invalid response")
+	}
+
+	iterations, err := strconv.Atoi(match[3])
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	return []byte(match[1]), []byte(match[2]), iterations, nil
+}
+
+func (l *Libvirt) secondStep(user, pass string, snonce, salt []byte, iterations int) error {
+	secondMsg := scram.ClientFinalMessage(
+		[]byte(user),
+		[]byte(pass),
+		[]byte("nonce"),
+		snonce,
+		salt,
+		[]byte(base64.StdEncoding.EncodeToString([]byte("n,,"))),
+		iterations,
+	)
+
+	var passInt []int8
+	for _, b := range secondMsg {
+		passInt = append(passInt, int8(b))
+	}
+
+	_, rNil, _, err := l.AuthSaslStep(0, passInt)
+	if err != nil {
+		return err
+
+	}
+	if rNil == 1 {
+		return fmt.Errorf("libvirt SASL auth, second step: response not nil")
+	}
+	return nil
 }
 
 func (l *Libvirt) initLibvirtComms(uri ConnectURI) error {
@@ -465,11 +436,11 @@ func (l *Libvirt) Connect() error {
 	return l.ConnectToURI(QEMUSystem)
 }
 
-func (l *Libvirt) ConnectWithAuth(auth AuthInfo) error {
-	return l.connectWithAuth(auth)
+func (l *Libvirt) ConnectWithAuth(user, pass, mech string) error {
+	return l.connectWithAuth(user, pass, mech)
 }
 
-func (l *Libvirt) connectWithAuth(auth AuthInfo) error {
+func (l *Libvirt) connectWithAuth(user, pass, mech string) error {
 	payload := struct {
 		Padding [3]byte
 		Name    ConnectURI
@@ -484,7 +455,7 @@ func (l *Libvirt) connectWithAuth(auth AuthInfo) error {
 	if err != nil {
 		return err
 	}
-	err = l.authenticateSASL(auth.(sasl.AuthInfo))
+	err = l.authenticateSASL(user, pass, mech)
 	if err != nil {
 		return err
 	}
@@ -1036,23 +1007,6 @@ func NewWithDialer(dialer socket.Dialer) *Libvirt {
 
 	l.socket = socket.New(dialer, l)
 
-	return l
-}
-
-func NewWithConn(dialer socket.Dialer, conn net.Conn) *Libvirt {
-	l := &Libvirt{
-		s:            0,
-		disconnected: make(chan struct{}),
-		callbacks:    make(map[int32]chan response),
-		events:       make(map[int32]*event.Stream),
-	}
-
-	l.socket = socket.New(dialer, l)
-
-	err := l.socket.ConnectFake(conn)
-	if err != nil {
-		fmt.Println(1030, err)
-	}
 	return l
 }
 
