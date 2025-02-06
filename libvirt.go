@@ -283,6 +283,8 @@ func (l *Libvirt) authenticateSASL(user, pass, mech string) error {
 
 func (l *Libvirt) fistStep(user string) ([]byte, []byte, int, error) {
 
+	firstStepErr := errors.New("first step")
+
 	firstMsg := scram.ClientFirstMessage([]byte(user), []byte("nonce"))
 
 	var firstMsgInt []int8
@@ -292,7 +294,7 @@ func (l *Libvirt) fistStep(user string) ([]byte, []byte, int, error) {
 
 	_, _, resp, err := l.AuthSaslStep(0, firstMsgInt)
 	if err != nil {
-		return nil, nil, 0, err
+		return nil, nil, 0, errors.Join(firstStepErr, err)
 	}
 
 	var res []byte
@@ -303,18 +305,21 @@ func (l *Libvirt) fistStep(user string) ([]byte, []byte, int, error) {
 	re := regexp.MustCompile(`r=nonce(.+),s=(.+),i=(\d+)`)
 	match := re.FindStringSubmatch(string(res))
 	if len(match) < 4 {
-		return nil, nil, 0, fmt.Errorf("libvirt SASL auth: invalid response")
+		return nil, nil, 0, errors.Join(firstStepErr,
+			fmt.Errorf("libvirt SASL auth: invalid response"))
 	}
 
 	iterations, err := strconv.Atoi(match[3])
 	if err != nil {
-		return nil, nil, 0, err
+		return nil, nil, 0, errors.Join(firstStepErr, err)
 	}
 
 	return []byte(match[1]), []byte(match[2]), iterations, nil
 }
 
 func (l *Libvirt) secondStep(user, pass string, snonce, salt []byte, iterations int) error {
+	secondStepErr := errors.New("second step")
+
 	secondMsg := scram.ClientFinalMessage(
 		[]byte(user),
 		[]byte(pass),
@@ -332,7 +337,7 @@ func (l *Libvirt) secondStep(user, pass string, snonce, salt []byte, iterations 
 
 	_, _, _, err := l.AuthSaslStep(0, passInt)
 	if err != nil {
-		return err
+		return errors.Join(secondStepErr, err)
 	}
 	return nil
 }
