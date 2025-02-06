@@ -263,6 +263,7 @@ func (l *Libvirt) authenticateSASL(user, pass, mech string) error {
 	if err != nil {
 		return err
 	}
+	fmt.Println(266, mechList)
 
 	if !strings.Contains(strings.ToLower(mechList), strings.ToLower(mech)) {
 		return fmt.Errorf("invalid mechanism '%s'", mech)
@@ -273,10 +274,12 @@ func (l *Libvirt) authenticateSASL(user, pass, mech string) error {
 		return err
 	}
 
+	fmt.Println(277, "started")
 	snonce, salt, iterations, err := l.fistStep(user)
 	if err != nil {
 		return err
 	}
+	fmt.Println(281, snonce, salt, iterations)
 
 	return l.secondStep(user, pass, snonce, salt, iterations)
 }
