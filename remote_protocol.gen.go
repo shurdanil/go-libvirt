@@ -22,7 +22,6 @@ package libvirt
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 
 	"github.com/shurdanil/go-libvirt/internal/constants"
@@ -6348,23 +6347,6 @@ func (l *Libvirt) AuthSaslStep(Nil int32, Data []int8) (rComplete int32, rNil in
 	if err != nil {
 		return
 	}
-
-	buf = []byte{}
-
-	r, err = l.requestStream(157, constants.Program, buf, nil, nil)
-	fmt.Println(6370, err)
-
-	// Return value unmarshaling
-	tpd = typedParamDecoder{}
-	ct = map[string]xdr.TypeDecoder{"libvirt.TypedParam": tpd}
-	rdr = bytes.NewReader(r.Payload)
-	dec = xdr.NewDecoderCustomTypes(rdr, 0, ct)
-	// LibVer: uint64
-	var rLibVer uint64
-	_, err = dec.Decode(&rLibVer)
-
-	fmt.Println(6370, err)
-	fmt.Println(6371, rLibVer)
 
 	return
 }
