@@ -405,6 +405,30 @@ func (l *Libvirt) initLibvirtComms(uri ConnectURI) error {
 	return nil
 }
 
+func (l *Libvirt) InitLibvirtComms(uri ConnectURI) error {
+	payload := struct {
+		Padding [3]byte
+		Name    string
+		Flags   uint32
+	}{
+		Padding: [3]byte{0x1, 0x0, 0x0},
+		Name:    string(uri),
+		Flags:   0,
+	}
+
+	buf, err := encode(&payload)
+	if err != nil {
+		return err
+	}
+
+	_, err = l.request(constants.ProcConnectOpen, constants.Program, buf)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // ConnectToURI establishes communication with the specified libvirt driver
 // The underlying libvirt socket connection will be created via the dialer.
 // Since the connection can be lost, the Disconnected function can be used
