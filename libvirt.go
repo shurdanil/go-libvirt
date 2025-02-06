@@ -279,7 +279,7 @@ func (l *Libvirt) authenticateSASL(user, pass, mech string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(281, snonce, salt, iterations)
+	fmt.Println(281, string(snonce), string(salt), iterations)
 
 	return l.secondStep(user, pass, snonce, salt, iterations)
 }
@@ -305,6 +305,7 @@ func (l *Libvirt) fistStep(user string) ([]byte, []byte, int, error) {
 		res = append(res, byte(resInt))
 	}
 
+	fmt.Println(308, string(res))
 	re := regexp.MustCompile(`r=nonce(.+),s=(.+),i=(\d+)`)
 	match := re.FindStringSubmatch(string(res))
 	if len(match) < 4 {
