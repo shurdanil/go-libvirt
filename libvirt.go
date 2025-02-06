@@ -436,10 +436,6 @@ func (l *Libvirt) Connect() error {
 	return l.ConnectToURI(QEMUSystem)
 }
 
-func (l *Libvirt) SetConnection(conn net.Conn) error {
-	return l.socket.SetConn(conn)
-}
-
 func (l *Libvirt) ConnectWithAuth(user, pass, mech string) error {
 	return l.connectWithAuth(user, pass, mech)
 }
@@ -1010,6 +1006,24 @@ func NewWithDialer(dialer socket.Dialer) *Libvirt {
 	}
 
 	l.socket = socket.New(dialer, l)
+
+	return l
+}
+
+func NewWithConnection(conn net.Conn) *Libvirt {
+	l := &Libvirt{
+		s:            0,
+		disconnected: make(chan struct{}),
+		callbacks:    make(map[int32]chan response),
+		events:       make(map[int32]*event.Stream),
+	}
+
+	l.socket = socket.New(dialers.NewAlreadyConnected(conn), l)
+
+	err := l.socket.SetConn(conn)
+	if err != nil {
+		return nil
+	}
 
 	return l
 }
