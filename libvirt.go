@@ -436,6 +436,10 @@ func (l *Libvirt) Connect() error {
 	return l.ConnectToURI(QEMUSystem)
 }
 
+func (l *Libvirt) SetConnection(conn net.Conn) error {
+	return l.socket.SetConn(conn)
+}
+
 func (l *Libvirt) ConnectWithAuth(user, pass, mech string) error {
 	return l.connectWithAuth(user, pass, mech)
 }

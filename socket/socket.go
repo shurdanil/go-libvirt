@@ -151,7 +151,7 @@ func (s *Socket) Connect() error {
 	return nil
 }
 
-func (s *Socket) ConnectFake(conn net.Conn) error {
+func (s *Socket) SetConn(conn net.Conn) error {
 
 	s.conn = conn
 	s.reader = bufio.NewReader(conn)
