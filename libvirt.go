@@ -334,15 +334,23 @@ func (l *Libvirt) secondStep(user, pass string, snonce, salt []byte, iterations 
 		iterations,
 	)
 
-	var passInt []int8
+	var secondMsgInt []int8
 	for _, b := range secondMsg {
-		passInt = append(passInt, int8(b))
+		secondMsgInt = append(secondMsgInt, int8(b))
 	}
 
-	_, _, _, err := l.AuthSaslStep(0, passInt)
+	_, _, i4, err := l.AuthSaslStep(0, secondMsgInt)
 	if err != nil {
 		return errors.Join(secondStepErr, err)
 	}
+
+	var res []byte
+	for _, resInt := range i4 {
+		res = append(res, byte(resInt))
+	}
+	resstr := string(res)
+	fmt.Println("second server msg", resstr)
+
 	return nil
 }
 
