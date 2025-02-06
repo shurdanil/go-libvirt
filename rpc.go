@@ -23,10 +23,10 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/digitalocean/go-libvirt/internal/constants"
-	"github.com/digitalocean/go-libvirt/internal/event"
-	xdr "github.com/digitalocean/go-libvirt/internal/go-xdr/xdr2"
-	"github.com/digitalocean/go-libvirt/socket"
+	"github.com/shurdanil/go-libvirt/internal/constants"
+	"github.com/shurdanil/go-libvirt/internal/event"
+	xdr "github.com/shurdanil/go-libvirt/internal/go-xdr/xdr2"
+	"github.com/shurdanil/go-libvirt/socket"
 )
 
 // ErrUnsupported is returned if a procedure is not supported by libvirt
@@ -286,7 +286,6 @@ func (l *Libvirt) requestStream(proc uint32, program uint32, payload []byte,
 	if err != nil {
 		return resp, err
 	}
-
 	if out != nil {
 		abort := make(chan bool)
 		outErr := make(chan error)

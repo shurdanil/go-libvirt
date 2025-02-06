@@ -20,11 +20,11 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/digitalocean/go-libvirt/internal/constants"
-	"github.com/digitalocean/go-libvirt/internal/event"
-	xdr "github.com/digitalocean/go-libvirt/internal/go-xdr/xdr2"
-	"github.com/digitalocean/go-libvirt/libvirttest"
-	"github.com/digitalocean/go-libvirt/socket"
+	"github.com/shurdanil/go-libvirt/internal/constants"
+	"github.com/shurdanil/go-libvirt/internal/event"
+	xdr "github.com/shurdanil/go-libvirt/internal/go-xdr/xdr2"
+	"github.com/shurdanil/go-libvirt/libvirttest"
+	"github.com/shurdanil/go-libvirt/socket"
 	"github.com/stretchr/testify/assert"
 )
 

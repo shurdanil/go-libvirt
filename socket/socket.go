@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -11,7 +12,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/digitalocean/go-libvirt/internal/constants"
+	"github.com/shurdanil/go-libvirt/internal/constants"
 )
 
 const disconnectTimeout = 5 * time.Second
@@ -123,9 +124,6 @@ func New(dialer Dialer, router Router) *Socket {
 		mu:           &sync.Mutex{},
 	}
 
-	// we start with a closed channel since that indicates no connection
-	close(s.disconnected)
-
 	return s
 }
 
@@ -142,6 +140,18 @@ func (s *Socket) Connect() error {
 	if err != nil {
 		return err
 	}
+
+	s.conn = conn
+	s.reader = bufio.NewReader(conn)
+	s.writer = bufio.NewWriter(conn)
+	s.disconnected = make(chan struct{})
+
+	go s.listenAndRoute()
+
+	return nil
+}
+
+func (s *Socket) SetConn(conn net.Conn) error {
 
 	s.conn = conn
 	s.reader = bufio.NewReader(conn)
@@ -319,6 +329,7 @@ func (s *Socket) SendPacket(
 	p.Len = uint32(size)
 
 	if s.isDisconnected() {
+		fmt.Println(325, "disconnected")
 		// this mirrors what a lot of net code return on use of a no
 		// longer valid connection
 		return syscall.EINVAL
@@ -339,8 +350,8 @@ func (s *Socket) SendPacket(
 			return err
 		}
 	}
-
-	return s.writer.Flush()
+	err = s.writer.Flush()
+	return err
 }
 
 // SendStream sends a stream of packets to libvirt on the socket connection.

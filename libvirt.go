@@ -21,24 +21,25 @@ package libvirt
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
+	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	"github.com/digitalocean/go-libvirt/internal/constants"
-	"github.com/digitalocean/go-libvirt/internal/event"
-	xdr "github.com/digitalocean/go-libvirt/internal/go-xdr/xdr2"
-	"github.com/digitalocean/go-libvirt/socket"
-	"github.com/digitalocean/go-libvirt/socket/dialers"
+	"github.com/shurdanil/go-libvirt/internal/constants"
+	"github.com/shurdanil/go-libvirt/internal/event"
+	xdr "github.com/shurdanil/go-libvirt/internal/go-xdr/xdr2"
+	"github.com/shurdanil/go-libvirt/scram"
+	"github.com/shurdanil/go-libvirt/socket"
+	"github.com/shurdanil/go-libvirt/socket/dialers"
 )
-
-// ErrEventsNotSupported is returned by Events() if event streams
-// are unsupported by either QEMU or libvirt.
-var ErrEventsNotSupported = errors.New("event monitor is not supported")
 
 // ConnectURI defines a type for driver URIs for libvirt
 // the defined constants are *not* exhaustive as there are also options
@@ -52,7 +53,7 @@ const (
 	QEMUSession ConnectURI = "qemu:///session"
 	// XenSystem connects to a Xen system mode daemon
 	XenSystem ConnectURI = "xen:///system"
-	//TestDefault connect to default mock driver
+	// TestDefault connect to default mock driver
 	TestDefault ConnectURI = "test:///default"
 
 	// disconnectedTimeout is how long to wait for disconnect cleanup to
@@ -250,6 +251,107 @@ func (l *Libvirt) authenticate() error {
 	return nil
 }
 
+func (l *Libvirt) decode(payload []byte, v interface{}) error {
+	dec := xdr.NewDecoder(bytes.NewReader(payload))
+	_, err := dec.Decode(v)
+	return err
+}
+
+func (l *Libvirt) authenticateSASL(user, pass string, mech scram.Mechanism) error {
+
+	mechList, err := l.AuthSaslInit()
+	if err != nil {
+		return err
+	}
+
+	if !strings.Contains(strings.ToLower(mechList), strings.ToLower(string(mech))) {
+		return fmt.Errorf("invalid mechanism '%s'", mech)
+	}
+
+	_, _, _, err = l.AuthSaslStart(string(mech), 0, []int8{})
+	if err != nil {
+		return err
+	}
+
+	switch mech {
+	case scram.SCRAMSHA1:
+		return l.authScramSHA1(user, pass)
+	default:
+		return fmt.Errorf("mechanism '%s' not implemented", mech)
+	}
+}
+
+func (l *Libvirt) authScramSHA1(user, pass string) error {
+	snonce, salt, iterations, err := l.fistStep(user)
+	if err != nil {
+		return err
+	}
+
+	return l.secondStep(user, pass, snonce, salt, iterations)
+}
+
+func (l *Libvirt) fistStep(user string) ([]byte, []byte, int, error) {
+
+	firstStepErr := errors.New("first step")
+
+	firstMsg := scram.ClientFirstMessage([]byte(user), []byte("nonce"))
+
+	var firstMsgInt []int8
+	for _, b := range firstMsg {
+		firstMsgInt = append(firstMsgInt, int8(b))
+	}
+
+	_, _, resp, err := l.AuthSaslStep(0, firstMsgInt)
+	if err != nil {
+		return nil, nil, 0, errors.Join(firstStepErr, err)
+	}
+
+	var res []byte
+	for _, resInt := range resp {
+		res = append(res, byte(resInt))
+	}
+
+	re := regexp.MustCompile(`r=nonce(.+),s=(.+),i=(\d+)`)
+	match := re.FindStringSubmatch(string(res))
+	if len(match) < 4 {
+		return nil, nil, 0, errors.Join(firstStepErr,
+			fmt.Errorf("libvirt SASL auth: invalid response"))
+	}
+
+	iterations, err := strconv.Atoi(match[3])
+	if err != nil {
+		return nil, nil, 0, errors.Join(firstStepErr, err)
+	}
+
+	return []byte(match[1]), []byte(match[2]), iterations, nil
+}
+
+func (l *Libvirt) secondStep(user, pass string, snonce, salt []byte, iterations int) error {
+	secondStepErr := errors.New("second step")
+
+	secondMsg := scram.ClientFinalMessage(
+		[]byte(user),
+		[]byte(pass),
+		[]byte("nonce"),
+		snonce,
+		salt,
+		[]byte(base64.StdEncoding.EncodeToString([]byte("n,,"))),
+		iterations,
+	)
+
+	var secondMsgInt []int8
+	for _, b := range secondMsg {
+		secondMsgInt = append(secondMsgInt, int8(b))
+	}
+
+	_, _, _, err := l.AuthSaslStep(0, secondMsgInt)
+	if err != nil {
+		return errors.Join(secondStepErr, err)
+	}
+
+	return nil
+}
+
 func (l *Libvirt) initLibvirtComms(uri ConnectURI) error {
 	payload := struct {
 		Padding [3]byte
@@ -267,6 +369,30 @@ func (l *Libvirt) initLibvirtComms(uri ConnectURI) error {
 	}
 
 	err = l.authenticate()
+	if err != nil {
+		return err
+	}
+
+	_, err = l.request(constants.ProcConnectOpen, constants.Program, buf)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (l *Libvirt) InitLibvirtComms(uri ConnectURI) error {
+	payload := struct {
+		Padding [3]byte
+		Name    string
+		Flags   uint32
+	}{
+		Padding: [3]byte{0x1, 0x0, 0x0},
+		Name:    string(uri),
+		Flags:   0,
+	}
+
+	buf, err := encode(&payload)
 	if err != nil {
 		return err
 	}
@@ -313,6 +439,38 @@ func (l *Libvirt) ConnectToURI(uri ConnectURI) error {
 // to monitor for a lost connection.
 func (l *Libvirt) Connect() error {
 	return l.ConnectToURI(QEMUSystem)
+}
+
+func (l *Libvirt) ConnectWithAuth(user, pass string, mech scram.Mechanism) error {
+	return l.connectWithAuth(user, pass, mech)
+}
+
+func (l *Libvirt) connectWithAuth(user, pass string, mech scram.Mechanism) error {
+	payload := struct {
+		Padding [3]byte
+		Name    ConnectURI
+		Flags   uint32
+	}{
+		Padding: [3]byte{0x1, 0x0, 0x0},
+		Name:    QEMUSystem,
+		Flags:   0,
+	}
+
+	buf, err := encode(&payload)
+	if err != nil {
+		return err
+	}
+	err = l.authenticateSASL(user, pass, mech)
+	if err != nil {
+		return err
+	}
+
+	_, err = l.request(constants.ProcConnectOpen, constants.Program, buf)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Disconnect shuts down communication with the libvirt server and closes the
@@ -527,6 +685,7 @@ func (l *Libvirt) LifecycleEvents(ctx context.Context) (<-chan DomainEventLifecy
 
 // Run executes the given QAPI command against a domain's QEMU instance.
 // For a list of available QAPI commands, see:
+//
 //	http://git.qemu.org/?p=qemu.git;a=blob;f=qapi-schema.json;hb=HEAD
 func (l *Libvirt) Run(dom string, cmd []byte) ([]byte, error) {
 	d, err := l.lookup(dom)
@@ -728,7 +887,8 @@ type BlockLimit struct {
 // 'blkdeviotune' command on a VM in virsh.
 //
 // Example usage:
-//  SetBlockIOTune("vm-name", "vda", BlockLimit{libvirt.QEMUBlockIOWriteBytesSec, 1000000})
+//
+//	SetBlockIOTune("vm-name", "vda", BlockLimit{libvirt.QEMUBlockIOWriteBytesSec, 1000000})
 //
 // Deprecated: use DomainSetBlockIOTune instead.
 func (l *Libvirt) SetBlockIOTune(dom string, disk string, limits ...BlockLimit) error {
@@ -848,8 +1008,23 @@ func NewWithDialer(dialer socket.Dialer) *Libvirt {
 
 	l.socket = socket.New(dialer, l)
 
-	// we start with a closed channel since that indicates no connection
-	close(l.disconnected)
+	return l
+}
+
+func NewWithConnection(conn net.Conn) *Libvirt {
+	l := &Libvirt{
+		s:            0,
+		disconnected: make(chan struct{}),
+		callbacks:    make(map[int32]chan response),
+		events:       make(map[int32]*event.Stream),
+	}
+
+	l.socket = socket.New(dialers.NewAlreadyConnected(conn), l)
+
+	err := l.socket.SetConn(conn)
+	if err != nil {
+		return nil
+	}
 
 	return l
 }
