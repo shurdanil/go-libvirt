@@ -257,22 +257,31 @@ func (l *Libvirt) decode(payload []byte, v interface{}) error {
 	return err
 }
 
-func (l *Libvirt) authenticateSASL(user, pass, mech string) error {
+func (l *Libvirt) authenticateSASL(user, pass string, mech constants.Mechanism) error {
 
 	mechList, err := l.AuthSaslInit()
 	if err != nil {
 		return err
 	}
 
-	if !strings.Contains(strings.ToLower(mechList), strings.ToLower(mech)) {
+	if !strings.Contains(strings.ToLower(mechList), strings.ToLower(string(mech))) {
 		return fmt.Errorf("invalid mechanism '%s'", mech)
 	}
 
-	_, _, _, err = l.AuthSaslStart(mech, 0, []int8{})
+	_, _, _, err = l.AuthSaslStart(string(mech), 0, []int8{})
 	if err != nil {
 		return err
 	}
 
+	switch mech {
+	case constants.SCRAMSHA1:
+		return l.authScramSHA1(user, pass)
+	default:
+		return fmt.Errorf("mechanism '%s' not implemented", mech)
+	}
+}
+
+func (l *Libvirt) authScramSHA1(user, pass string) error {
 	snonce, salt, iterations, err := l.fistStep(user)
 	if err != nil {
 		return err
@@ -432,11 +441,11 @@ func (l *Libvirt) Connect() error {
 	return l.ConnectToURI(QEMUSystem)
 }
 
-func (l *Libvirt) ConnectWithAuth(user, pass, mech string) error {
+func (l *Libvirt) ConnectWithAuth(user, pass string, mech constants.Mechanism) error {
 	return l.connectWithAuth(user, pass, mech)
 }
 
-func (l *Libvirt) connectWithAuth(user, pass, mech string) error {
+func (l *Libvirt) connectWithAuth(user, pass string, mech constants.Mechanism) error {
 	payload := struct {
 		Padding [3]byte
 		Name    ConnectURI

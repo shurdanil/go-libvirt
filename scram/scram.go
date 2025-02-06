@@ -1,7 +1,6 @@
 package scram
 
 import (
-	"bytes"
 	"encoding/base64"
 	"fmt"
 	"strconv"
@@ -9,27 +8,12 @@ import (
 	"crypto/hmac"
 	"crypto/sha1"
 
+	"github.com/shurdanil/go-libvirt/internal/constants"
 	"golang.org/x/crypto/pbkdf2"
 )
 
-const (
-	ClientNonce     = "fyko+d2lbbFgONRv9qkxdawL"
-	ServerNonce     = "3rfcNHYJY1ZVvWVs7j"
-	ServerSalt      = "QSXCR+Q6sek8bf92"
-	ServerStoredKey = "6dlGYMOdZcOPutkcNY8U2g7vK9Y="
-	ServerServerKey = "D+CSWLOshSulAsxiupA+qs2/fTE="
-
-	ClientName   = "user"
-	ClientPass   = "pencil"
-	ClientHeader = "biws"
-
-	Iterations = 4096
-
-	PBKDF2Length = 20
-)
-
 func pbkdf2Sum(password, salt []byte, i int) []byte {
-	return pbkdf2.Key(password, salt, i, PBKDF2Length, sha1.New)
+	return pbkdf2.Key(password, salt, i, constants.PBKDF2Length, sha1.New)
 }
 
 func hmacSum(key, message []byte) []byte {
@@ -138,53 +122,4 @@ func ClientFinalMessage(cName, cPass, cNonce, sNonce, sSalt, cHeader []byte, ite
 	out = append(out, toBase64(clientProof)...)
 
 	return
-}
-
-func ClientProof(cPass, sSalt []byte, iterations int) (out []byte) {
-
-	saltedPassword := pbkdf2Sum(normalize(cPass), fromBase64(sSalt), iterations)
-
-	return toBase64(hmacSum(saltedPassword, []byte("Client Key")))
-}
-
-func serverFinalMessage(sServerKey, cName, cNonce, sNonce, sSalt, cHeader []byte, iterations int) (out []byte) {
-	authMessage := AuthMessage(cName, cNonce, sNonce, sSalt, cHeader, iterations)
-
-	serverSignature := hmacSum(sServerKey, authMessage)
-
-	out = []byte("v=")
-	out = append(out, toBase64(serverSignature)...)
-	return
-}
-
-func getAttribute(message []byte, attribute byte) []byte {
-	attributes := bytes.Split(message, []byte{','})
-
-	for _, a := range attributes {
-		if len(a) > 0 && a[0] == attribute {
-			return a[2:]
-		}
-	}
-	return nil
-}
-
-func isValidClient(cName, cNonce, sNonce, sSalt, cHeader, sStoredKey, cProof []byte, iterations int) bool {
-	authMessage := AuthMessage(cName, cNonce, sNonce, sSalt, cHeader, iterations)
-	clientSignature := hmacSum(sStoredKey, authMessage)
-	clientKey := xor(clientSignature, cProof)
-
-	attemptingStoredKey := sha1Sum(clientKey)
-
-	return bytes.Equal(attemptingStoredKey, sStoredKey)
-}
-
-func isValidServer(cName, cPass, cNonce, sNonce, sSalt, cHeader, serverSignature []byte, iterations int) bool {
-	authMessage := AuthMessage(cName, cNonce, sNonce, sSalt, cHeader, iterations)
-
-	saltedPassword := pbkdf2Sum(normalize(cPass), fromBase64(sSalt), iterations)
-	serverKey := hmacSum(saltedPassword, []byte("Server Key"))
-
-	attemptingServerSignature := hmacSum(serverKey, authMessage)
-
-	return bytes.Equal(attemptingServerSignature, serverSignature)
 }
